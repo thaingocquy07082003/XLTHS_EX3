@@ -9,9 +9,9 @@ from sklearn.decomposition import PCA
 #  trich xuat vector dac trung cho tung file tin hieu
 def extract_mfcc_from_wav(file_path):
     # Đọc file wav và lấy mẫu
-    threshold = 0.02
-    signal, sr = librosa.load(file_path, sr=None)
-    frame_length = int(0.01 * sr)
+    threshold = 0.04
+    signal, Fs = librosa.load(file_path, sr=None)
+    frame_length = int(0.015 * Fs)
     frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
@@ -24,22 +24,28 @@ def extract_mfcc_from_wav(file_path):
     silence_segments = librosa.effects.split(signal, top_db=threshold)
     # Bỏ đi các khoảng lặng < 300 ms
     for start, end in silence_segments:
-        duration = librosa.samples_to_time(end - start, sr=sr)
-        if duration < 0.2:
+        duration = librosa.samples_to_time(end - start, sr=Fs)
+        if duration < 0.3:
             is_speech_full[start:end] = True
     # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
     vowel = signal[is_speech_full]
+    frame_length = int(0.025 * Fs)
+    hop_length = int(0.005 * Fs)
+    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=hop_length)
+    #Số khung
+    N = frames.shape[1]
+    fft_frames = []
+    start = N//5
+    end = 3*start
+    for i in range(end - start):  # Lặp từ 0 đến N//2 - 1x``
+        frame = frames[:, i]  # Lấy frame thứ i
+        fft_result = mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
+        fft_frames.append(fft_result)
     # Trích xuất MFCC
-    mfccs = librosa.feature.mfcc(y=vowel, sr=sr, n_mfcc=13, n_fft=2048, hop_length=512)
+    # mfccs = librosa.feature.mfcc(y=vowel, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
     # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
     mfccs_mean = np.mean(mfccs, axis=1)
-    desired_size = 21  # co the la bang 42
-    # If the size of mfccs_mean is greater than desired_size, truncate
-    if len(mfccs_mean) > desired_size:
-        mfccs_mean = mfccs_mean[:desired_size]
-    # If the size is less than desired_size, pad with zeros
-    elif len(mfccs_mean) < desired_size:
-        mfccs_mean = np.pad(mfccs_mean, (0, desired_size - len(mfccs_mean)))
+
     return mfccs_mean
 
 def build_model_a():
