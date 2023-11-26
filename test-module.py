@@ -37,7 +37,7 @@ def extract_mfcc_from_wav(file_path):
     fft_frames = []
     start = N//5
     end = 3*start
-    for i in range(end - start):  # Lặp từ 0 đến N//2 - 1x``
+    for i in range(start, end):  # Lặp từ 0 đến N//2 - 1x``
         frame = frames[:, i]  # Lấy frame thứ i
         fft_result = mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
         fft_frames.append(fft_result)
