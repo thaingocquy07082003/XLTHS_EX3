@@ -21,13 +21,6 @@ def extract_mfcc_from_wav(file_path):
     # If the size is less than desired_size, pad with zeros
     elif len(mfccs_mean) < desired_size:
         mfccs_mean = np.pad(mfccs_mean, (0, desired_size - len(mfccs_mean)))
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(mfccs_mean, label=f'MFCC {0 + 1}')
-    # plt.title('First 5 MFCC Vectors Over Time')
-    # plt.xlabel('Frame Index')
-    # plt.ylabel('MFCC Coefficient Value')
-    # plt.legend()
-    # plt.show()
     return mfccs_mean
 
 def build_model_a():

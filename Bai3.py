@@ -3,8 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def part_1():
+    file_path = r'signals/NguyenAmHuanLuyen-16k/23MTL/a.wav'
     # Đọc file .wav
-    audio_signal, sr = librosa.load(r"C:\Users\thain\PycharmProjects\XLTHS_EX3\signals\NguyenAmHuanLuyen-16k\23MTL\a.wav", sr=None)  # sr (sample rate) is kept as original
+    audio_signal, sr = librosa.load(file_path, sr=None)  # sr (sample rate) is kept as original
     # Preprocess the signal (for example, remove noise)
     audio_signal_preprocessed = librosa.effects.preemphasis(audio_signal)
     # Detect silent sections
