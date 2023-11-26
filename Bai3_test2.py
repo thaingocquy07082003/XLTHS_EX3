@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 
 def segment_vowel_silence(audio, fs, threshold=0.03, min_duration=0.3):
     # Chia khung tín hiệu, mỗi khung độ dài 20ms
-    frame_length = int(0.02 * fs)
+    frame_length = int(0.01 * fs)
     frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
@@ -38,7 +38,7 @@ def MFCC_1vowel_1speaker(audio, fs):
     """
 
     # Chia khung tín hiệu, mỗi khung độ dài 20ms
-    frame_length = int(0.02 * fs)
+    frame_length = int(0.01 * fs)
     frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
     # Số khung
     N = frames.shape[1]
@@ -47,7 +47,7 @@ def MFCC_1vowel_1speaker(audio, fs):
 
     # Tính biến đổi Fourier nhanh (FFT) từng khung
     mfcc_frames = []
-    for frame in frames[M:2 * M]:
+    for frame in frames[0:3 * M]:
         mfcc_result = librosa.feature.mfcc(y=frame, sr=fs, n_mfcc=13)
         mfcc_frames.append(mfcc_result)
     # Tính trung bình cộng của M vector FFT
@@ -241,4 +241,4 @@ plt.xlabel("Predicted")
 plt.ylabel("True")
 plt.title("Confusion Matrix")
 plt.show()
-test_a()
+# test_a()
