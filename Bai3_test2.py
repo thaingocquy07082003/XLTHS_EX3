@@ -36,7 +36,6 @@ def MFCC_1vowel_1speaker(audio, fs):
     """
     Hàm Trích xuất vector FFT của 1 nguyên âm 1 người (1 audio input)
     """
-
     # Chia khung tín hiệu, mỗi khung độ dài 20ms
     frame_length = int(0.01 * fs)
     frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)

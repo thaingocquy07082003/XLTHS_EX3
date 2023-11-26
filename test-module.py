@@ -9,9 +9,9 @@ from sklearn.decomposition import PCA
 #  trich xuat vector dac trung cho tung file tin hieu
 def extract_mfcc_from_wav(file_path):
     # Đọc file wav và lấy mẫu
-    threshold = 0.02
-    signal, sr = librosa.load(file_path, sr=None)
-    frame_length = int(0.01 * sr)
+    threshold = 0.04
+    signal, Fs = librosa.load(file_path, sr=None)
+    frame_length = int(0.015 * Fs)
     frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
@@ -24,29 +24,28 @@ def extract_mfcc_from_wav(file_path):
     silence_segments = librosa.effects.split(signal, top_db=threshold)
     # Bỏ đi các khoảng lặng < 300 ms
     for start, end in silence_segments:
-        duration = librosa.samples_to_time(end - start, sr=sr)
+        duration = librosa.samples_to_time(end - start, sr=Fs)
         if duration < 0.2:
             is_speech_full[start:end] = True
     # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
     vowel = signal[is_speech_full]
+    frame_length = int(0.025 * Fs)   # 0.025
+    hop_length = int(0.011 * Fs)     # 0.011
+    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=hop_length)
+    #Số khung
+    N = frames.shape[1]
+    fft_frames = []
+    start = N//3
+    end =  2*start#3*start
+    for i in range(start,end):  # Lặp từ start đến end``
+        frame = frames[:, i]  # Lấy frame thứ i
+        fft_result = mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
+        fft_frames.append(fft_result)
     # Trích xuất MFCC
-    mfccs = librosa.feature.mfcc(y=vowel, sr=sr, n_mfcc=13, n_fft=2048, hop_length=512)
+    # mfccs = librosa.feature.mfcc(y=vowel, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
     # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
     mfccs_mean = np.mean(mfccs, axis=1)
-    desired_size = 21  # co the la bang 42
-    # If the size of mfccs_mean is greater than desired_size, truncate
-    if len(mfccs_mean) > desired_size:
-        mfccs_mean = mfccs_mean[:desired_size]
-    # If the size is less than desired_size, pad with zeros
-    elif len(mfccs_mean) < desired_size:
-        mfccs_mean = np.pad(mfccs_mean, (0, desired_size - len(mfccs_mean)))
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(mfccs_mean, label=f'MFCC {0 + 1}')
-    # plt.title('First 5 MFCC Vectors Over Time')
-    # plt.xlabel('Frame Index')
-    # plt.ylabel('MFCC Coefficient Value')
-    # plt.legend()
-    # plt.show()
+
     return mfccs_mean
 
 def build_model_a():
@@ -143,6 +142,12 @@ def test(x_test, y_test, model):
         - Kết quả nhận dạng (dự đoán) nhãn nguyên âm của mỗi file test (/a/, …,/u/), Đúng/Sai
         - Độ chính xác nhận dạng tổng hợp (%)
     """
+    index = ["a","e","i","o","u"]
+    column1= []  # ten file
+    column2 = []   # du doan
+    column3 = []   # dung hay sai
+    data = {}
+    i=0
     y_pred = []
     test_fft_vectors = readSignals_and_extractionMFCC(x_test)
     for i in range(len(test_fft_vectors)):
@@ -150,9 +155,16 @@ def test(x_test, y_test, model):
         y_pred.append(one_predict)
         check = (y_test[i] == one_predict)
         print(f"{x_test[i]} /{one_predict}/ -> {check}")
-
+        data_tmp = {f"{i}": [x_test[i],one_predict,check]}
+        column1.append(x_test[i])
+        column2.append(one_predict)
+        column3.append(check)
+    data = {'Index': index,
+            'Column1': column1,
+            'Column2': column2,
+            'Column3': column3}
     accuracy = accuracy_score(y_test, y_pred)
-    return y_pred, accuracy
+    return y_pred, accuracy ,data
 
 def matching(vector_x, model_vectors):
     """Hàm so khớp vector_x (input) và model (các vector tham số của 5 nguyên âm)
@@ -189,7 +201,7 @@ for x_name in x_test:
     print(x_name)
 
 model = Model_Of_speak()
-y_pred, accuracy = test(x_test, y_test, model)
+y_pred, accuracy ,data = test(x_test, y_test, model)
 confusion = confusion_matrix(y_test, y_pred)
 class_names = np.unique(y_test)
 df_confusion = pd.DataFrame(confusion, index=class_names, columns=class_names)
@@ -199,3 +211,5 @@ plt.xlabel("Predicted")
 plt.ylabel("True")
 plt.title("Confusion Matrix")
 plt.show()
+
+
