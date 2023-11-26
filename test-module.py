@@ -9,12 +9,31 @@ from sklearn.decomposition import PCA
 #  trich xuat vector dac trung cho tung file tin hieu
 def extract_mfcc_from_wav(file_path):
     # Đọc file wav và lấy mẫu
+    threshold = 0.02
     signal, sr = librosa.load(file_path, sr=None)
+    frame_length = int(0.01 * sr)
+    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=frame_length)
+    # Tính STE từng khung
+    ste = np.sum(np.square(frames), axis=0)
+    ste_normalized = (ste - np.min(ste)) / (np.max(ste) - np.min(ste))
+    # Phân loại thành tiếng nói và khoảng lặng
+    is_speech = ste_normalized > threshold
+    is_speech_full = np.repeat(is_speech, frame_length)[:len(signal)]
+    is_speech_full = np.pad(is_speech_full, (0, len(signal) - len(is_speech_full)), constant_values=False)
+    # Tìm danh sách khoảng lặng
+    silence_segments = librosa.effects.split(signal, top_db=threshold)
+    # Bỏ đi các khoảng lặng < 300 ms
+    for start, end in silence_segments:
+        duration = librosa.samples_to_time(end - start, sr=sr)
+        if duration < 0.2:
+            is_speech_full[start:end] = True
+    # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
+    vowel = signal[is_speech_full]
     # Trích xuất MFCC
-    mfccs = librosa.feature.mfcc(y=signal, sr=sr, n_mfcc=13, n_fft=2048, hop_length=512)
+    mfccs = librosa.feature.mfcc(y=vowel, sr=sr, n_mfcc=13, n_fft=2048, hop_length=512)
     # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
     mfccs_mean = np.mean(mfccs, axis=1)
-    desired_size = 42
+    desired_size = 21  # co the la bang 42
     # If the size of mfccs_mean is greater than desired_size, truncate
     if len(mfccs_mean) > desired_size:
         mfccs_mean = mfccs_mean[:desired_size]
@@ -90,6 +109,15 @@ def Model_Of_speak():
     model_o = build_model_o()
     model_u = build_model_u()
     model = np.array([model_a, model_e, model_i, model_o, model_u])
+    plt.figure(figsize=(10, 6))
+    for i in range(5):
+        plt.plot(model[i, :], label=f'MFCC {i + 1}')
+    # Thêm title, legend và labels
+    plt.title(' 5 MFCC Vectors Over Time')
+    plt.xlabel('Frame Index')
+    plt.ylabel('MFCC Coefficient Value')
+    plt.legend()
+    plt.show()
     return model
 
 def readSignals_and_extractionMFCC(list_path):
