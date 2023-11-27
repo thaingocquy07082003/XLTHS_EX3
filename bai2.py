@@ -11,7 +11,7 @@ import scipy.signal.windows
 
 
 def segment_vowel_silence(audio, Fs, threshold = 0.065, min_duration=0.3):
-
+    print("check", Fs)
     # Chia khung tín hiệu, mỗi khung độ dài 25ms
     frame_length = int(0.025 * Fs)
     frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
@@ -37,34 +37,55 @@ def segment_vowel_silence(audio, Fs, threshold = 0.065, min_duration=0.3):
         if duration < min_duration:
             is_speech_full[start:end] = True
 
-    # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
-    vowel = audio[is_speech_full]
-    return vowel
+    # Tìm vị trí của các khung nguyên âm
+    vowel_indices = np.where(is_speech_full)[0]
+
+    # Chia thành 3 đoạn và lấy đoạn giữa
+    if len(vowel_indices) >= 3:
+        start_index = vowel_indices[len(vowel_indices) // 3]
+        end_index = vowel_indices[2 * len(vowel_indices) // 3]
+        vowel_middle_segment = audio[start_index:end_index]
+    else:
+        vowel_middle_segment = audio
+
+    return vowel_middle_segment
 
 def nomalizing_value(fft_vector):
     """
     Hàm chuẩn hóa vector FFT về cùng thang đo
     """
-    magnitude_spectrum = np.abs(fft_vector)
-    normalized_spectrum = magnitude_spectrum / np.sum(magnitude_spectrum)
+    magnitude_spectrum = np.abs(fft_vector) # Tính phổ biên độ bằng cách lấy giá trị tuyệt đối
+    normalized_spectrum = magnitude_spectrum / np.sum(magnitude_spectrum) # Chuẩn hóa về cùng thang đo bằng cách chia cho tổng các phần tử
     return normalized_spectrum
+    # Hàm nomalizing_value được sử dụng để chuẩn hóa vector tần số sau khi thực hiện FFT. 
+    # Điều này giúp đảm bảo rằng các giá trị của vector tần số nằm trong cùng một phạm vi [0,1]
+    # giúp quá trình huấn luyện mô hình hoặc phân loại sau này trở nên ổn định hơn.
 
 def FFT_1vowel_1speaker(audio, Fs , N_FFT):
     """
     Hàm Trích xuất vector FFT của 1 nguyên âm 1 người (1 audio input)
     """
     frame_length = int(0.025 * Fs)
-    hop_length = int(0.01 * Fs)
+    hop_length = int(0.005 * Fs)
     frames = librosa.util.frame(x=audio, frame_length=frame_length, hop_length=hop_length)
     sum_fft = np.zeros(N_FFT, dtype=complex)
+    # tạo ra một mảng của các số phức có độ dài là N_FFT. Điều này được sử dụng để tích lũy (accumulate) kết quả của phép biến đổi 
+    # Fourier (FFT) từ nhiều frame khác nhau.
 
     for frame in frames.T:  # .T Chuyển đổi khung để lặp lại chính xác
-        windowing_frame = frame * scipy.signal.windows.hamming(frame_length)
+        windowing_frame = frame * scipy.signal.windows.hamming(frame_length) # hamming dùng để giảm rò rỉ quang phổ được áp dụng cho từng khung
         sum_fft += np.abs(np.fft.fft(windowing_frame, N_FFT))
 
     avg_fft = sum_fft / len(frames[0])  # Chia cho số lượng khung hình
     return nomalizing_value(avg_fft)[:N_FFT // 2]
-# Chia khung tín hiệu, mỗi khung độ dài 20ms,số mẫu mỗi khung = độ dài khung *  tần số lấy mẫu
+    # avg_fft là kết quả trả về vector tần số sau phép biển đổi sau khi biến đổi Fourier   
+    # Hàm FFT_1vowel_1speaker thực hiện quá trình FFT để chuyển đổi một tín hiệu âm thanh từ miền thời gian sang miền tần số. 
+    # Kết quả của hàm này là một vector biểu diễn tần số của âm thanh, được sau đó chuẩn hóa bằng cách sử dụng hàm nomalizing_value
+
+
+
+
+    # Chia khung tín hiệu, mỗi khung độ dài 20ms,số mẫu mỗi khung = độ dài khung *  tần số lấy mẫu
     
     #Số khung
     # N = frames.shape[1]
@@ -105,7 +126,7 @@ def FFT_1vowel_nspeaker(vowelchar, N_FFT):
 
     vector_fft = np.mean(vectors, axis=0)
     print(f"Đã xong chữ {vowelchar}, len(vector_fft) = {len(vector_fft)}")
-    return vector_fft
+    return vector_fft 
 # vector_fft là tổng trung bình của 21 người nói khác nhau của mỗi nguyên âm
 
 # Caau2. ý 3: ở câu 2c ta tính được nguyên âm 1 file của 1 người nói, 

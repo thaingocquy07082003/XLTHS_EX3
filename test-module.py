@@ -6,45 +6,83 @@ import seaborn as sns
 import pandas as pd
 from sklearn.decomposition import PCA
 
-#  trich xuat vector dac trung cho tung file tin hieu
-def extract_mfcc_from_wav(file_path):
-    # Đọc file wav và lấy mẫu
-    threshold = 0.04
-    signal, Fs = librosa.load(file_path, sr=None)
-    frame_length = int(0.015 * Fs)
-    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=frame_length)
+def segment_vowel_silence(audio, Fs, threshold = 0.065, min_duration=0.3):
+    print("check", Fs)
+    # Chia khung tín hiệu, mỗi khung độ dài 25ms
+    frame_length = int(0.025 * Fs)
+    frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
+
+    # Chuẩn hóa STE
     ste_normalized = (ste - np.min(ste)) / (np.max(ste) - np.min(ste))
+
     # Phân loại thành tiếng nói và khoảng lặng
     is_speech = ste_normalized > threshold
-    is_speech_full = np.repeat(is_speech, frame_length)[:len(signal)]
-    is_speech_full = np.pad(is_speech_full, (0, len(signal) - len(is_speech_full)), constant_values=False)
+
+    is_speech_full = np.repeat(is_speech, frame_length)[:len(audio)]
+    is_speech_full = np.pad(is_speech_full, (0, len(audio) - len(is_speech_full)), constant_values=False) 
+    
+
     # Tìm danh sách khoảng lặng
-    silence_segments = librosa.effects.split(signal, top_db=threshold)
+    silence_segments = librosa.effects.split(audio, top_db=threshold)
+
     # Bỏ đi các khoảng lặng < 300 ms
     for start, end in silence_segments:
         duration = librosa.samples_to_time(end - start, sr=Fs)
-        if duration < 0.3:
+        if duration < min_duration:
             is_speech_full[start:end] = True
-    # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
-    vowel = signal[is_speech_full]
+
+    # Tìm vị trí của các khung nguyên âm
+    vowel_indices = np.where(is_speech_full)[0]
+
+    # Chia thành 3 đoạn và lấy đoạn giữa
+    if len(vowel_indices) >= 3:
+        start_index = vowel_indices[len(vowel_indices) // 3]
+        end_index = vowel_indices[2 * len(vowel_indices) // 3]
+        vowel_middle_segment = audio[start_index:end_index]
+    else:
+        vowel_middle_segment = audio
+
+    return vowel_middle_segment
+#  trich xuat vector dac trung cho tung file tin hieu
+def nomalizing_value(mfcc_vector):
+    """
+    Hàm chuẩn hóa vector MFCC về cùng thang đo
+    """
+    return (mfcc_vector - np.mean(mfcc_vector)) / np.std(mfcc_vector)
+def extract_mfcc_from_wav(file_path):
+    # Đọc file wav và lấy mẫu
+    signal, Fs = librosa.load(file_path, sr=None)
+    vowel = segment_vowel_silence(signal, Fs, threshold=0.065, min_duration=0.3)
     frame_length = int(0.025 * Fs)
-    hop_length = int(0.005 * Fs)
-    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=hop_length)
-    #Số khung
-    N = frames.shape[1]
-    fft_frames = []
-    start = N//5
-    end = 3*start
-    for i in range(start, end):  # Lặp từ 0 đến N//2 - 1x``
-        frame = frames[:, i]  # Lấy frame thứ i
-        fft_result = mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
-        fft_frames.append(fft_result)
+    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=frame_length // 2)
+
+    # # Số khung
+    # N = frames.shape[1]
+    mfcc_frames = []
+    # start = N // 5
+    # end = 3 * start
+    for frame in frames.T:
+        mfcc_result = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=frame_length, hop_length=frame_length//2)
+        mfcc_frames.append(mfcc_result)
+
     # Trích xuất MFCC
-    # mfccs = librosa.feature.mfcc(y=vowel, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
-    # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
-    mfccs_mean = np.mean(mfccs, axis=1)
+    mfccs = np.mean(mfcc_frames, axis=2)  # Take mean along the time axis
+    # được sử dụng để lấy giá trị trung bình dọc theo trục thời gian (axis=2), 
+    # tính trung bình một cách hiệu quả các hệ số MFCC theo thời gian cho mỗi khung.
+    # Nói cách khác, nó tính giá trị trung bình của các hệ số MFCC theo thời gian cho từng khung, 
+    # tạo ra một mảng 2D trong đó mỗi hàng tương ứng với một hệ số MFCC và mỗi cột tương ứng với một khung. 
+    # Điều này cho phép bạn có được bộ hệ số MFCC đại diện cho từng khung hình trong âm thanh đầu vào.
+
+    # Chuẩn hóa MFCCs
+    normalized_mfccs = []
+    for mfcc_frame in mfccs:
+        normalized_mfcc_frame = nomalizing_value(mfcc_frame)
+        normalized_mfccs.append(normalized_mfcc_frame)
+
+    # Tính giá trị trung bình của các frame MFCC chuẩn hóa
+    mfccs_mean = np.mean(normalized_mfccs, axis=0)
 
     return mfccs_mean
 
