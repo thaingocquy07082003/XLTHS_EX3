@@ -5,11 +5,13 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 import seaborn as sns
 import pandas as pd
 from sklearn.decomposition import PCA
+import time
 
-def segment_vowel_silence(audio, Fs, threshold = 0.065, min_duration=0.3):
+
+def segment_vowel_silence(audio, Fs, threshold = 0.04, min_duration=0.3):
     print("check", Fs)
     # Chia khung tín hiệu, mỗi khung độ dài 25ms
-    frame_length = int(0.025 * Fs)
+    frame_length = int(0.03 * Fs)
     frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
@@ -54,15 +56,11 @@ def nomalizing_value(mfcc_vector):
 def extract_mfcc_from_wav(file_path):
     # Đọc file wav và lấy mẫu
     signal, Fs = librosa.load(file_path, sr=None)
-    vowel = segment_vowel_silence(signal, Fs, threshold=0.065, min_duration=0.3)
-    frame_length = int(0.025 * Fs)
+    vowel = segment_vowel_silence(signal, Fs, threshold=0.04, min_duration=0.3)
+    frame_length = int(0.03 * Fs)
     frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=frame_length // 2)
 
-    # # Số khung
-    # N = frames.shape[1]
     mfcc_frames = []
-    # start = N // 5
-    # end = 3 * start
     for frame in frames.T:
         mfcc_result = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=frame_length, hop_length=frame_length//2)
         mfcc_frames.append(mfcc_result)
@@ -83,7 +81,6 @@ def extract_mfcc_from_wav(file_path):
 
     # Tính giá trị trung bình của các frame MFCC chuẩn hóa
     mfccs_mean = np.mean(normalized_mfccs, axis=0)
-
     return mfccs_mean
 
 def build_model_a():
@@ -226,7 +223,11 @@ for x_name in x_test:
     print(x_name)
 
 model = Model_Of_speak()
+starttime = time.time()
 y_pred, accuracy = test(x_test, y_test, model)
+endtime = time.time()
+print(f"Thời gian chạy: {endtime - starttime} s")
+print("Accuracy:",accuracy)
 confusion = confusion_matrix(y_test, y_pred)
 class_names = np.unique(y_test)
 df_confusion = pd.DataFrame(confusion, index=class_names, columns=class_names)
