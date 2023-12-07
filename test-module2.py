@@ -9,89 +9,48 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 
-def segment_vowel_silence(audio, Fs, threshold=0.065, min_duration=0.3):
-    print("check", Fs)
-    # Chia khung tín hiệu, mỗi khung độ dài 25ms
-    frame_length = int(0.025 * Fs)
-    frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
+# cac K-mean dc code o day
+def extract_mfcc_from_wav(file_path):
+    # Đọc file wav và lấy mẫu
+    threshold = 0.04
+    signal, Fs = librosa.load(file_path, sr=None)
+    frame_length = int(0.015 * Fs)
+    frames = librosa.util.frame(signal, frame_length=frame_length, hop_length=frame_length)
     # Tính STE từng khung
     ste = np.sum(np.square(frames), axis=0)
-
-    # Chuẩn hóa STE
     ste_normalized = (ste - np.min(ste)) / (np.max(ste) - np.min(ste))
-
     # Phân loại thành tiếng nói và khoảng lặng
     is_speech = ste_normalized > threshold
-
-    is_speech_full = np.repeat(is_speech, frame_length)[:len(audio)]
-    is_speech_full = np.pad(is_speech_full, (0, len(audio) - len(is_speech_full)), constant_values=False)
-
+    is_speech_full = np.repeat(is_speech, frame_length)[:len(signal)]
+    is_speech_full = np.pad(is_speech_full, (0, len(signal) - len(is_speech_full)), constant_values=False)
     # Tìm danh sách khoảng lặng
-    silence_segments = librosa.effects.split(audio, top_db=threshold)
-
+    silence_segments = librosa.effects.split(signal, top_db=threshold)
     # Bỏ đi các khoảng lặng < 300 ms
     for start, end in silence_segments:
         duration = librosa.samples_to_time(end - start, sr=Fs)
-        if duration < min_duration:
+        if duration < 0.2:
             is_speech_full[start:end] = True
-
-    # Tìm vị trí của các khung nguyên âm
-    vowel_indices = np.where(is_speech_full)[0]
-
-    # Chia thành 3 đoạn và lấy đoạn giữa
-    if len(vowel_indices) >= 3:
-        start_index = vowel_indices[len(vowel_indices) // 3]
-        end_index = vowel_indices[2 * len(vowel_indices) // 3]
-        vowel_middle_segment = audio[start_index:end_index]
-    else:
-        vowel_middle_segment = audio
-
-    return vowel_middle_segment
-
-
-#  trich xuat vector dac trung cho tung file tin hieu
-def nomalizing_value(mfcc_vector):
-    """
-    Hàm chuẩn hóa vector MFCC về cùng thang đo
-    """
-    return (mfcc_vector - np.mean(mfcc_vector)) / np.std(mfcc_vector)
-
-
-def extract_mfcc_from_wav(file_path):
-    # Đọc file wav và lấy mẫu
-    signal, Fs = librosa.load(file_path, sr=None)
-    vowel = segment_vowel_silence(signal, Fs, threshold=0.065, min_duration=0.3)
-    frame_length = int(0.025 * Fs)
-    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=frame_length // 2)
-
-    # # Số khung
-    # N = frames.shape[1]
-    mfcc_frames = []
-    # start = N // 5
-    # end = 3 * start
-    for frame in frames.T:
-        mfcc_result = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=frame_length, hop_length=frame_length // 2)
-        mfcc_frames.append(mfcc_result)
-
-    # Trích xuất MFCC
-    mfccs = np.mean(mfcc_frames, axis=2)  # Take mean along the time axis
-    # được sử dụng để lấy giá trị trung bình dọc theo trục thời gian (axis=2),
-    # tính trung bình một cách hiệu quả các hệ số MFCC theo thời gian cho mỗi khung.
-    # Nói cách khác, nó tính giá trị trung bình của các hệ số MFCC theo thời gian cho từng khung,
-    # tạo ra một mảng 2D trong đó mỗi hàng tương ứng với một hệ số MFCC và mỗi cột tương ứng với một khung.
-    # Điều này cho phép bạn có được bộ hệ số MFCC đại diện cho từng khung hình trong âm thanh đầu vào.
-
-    # Chuẩn hóa MFCCs
-    normalized_mfccs = []
-    for mfcc_frame in mfccs:
-        normalized_mfcc_frame = nomalizing_value(mfcc_frame)
-        normalized_mfccs.append(normalized_mfcc_frame)
-
-    # Tính giá trị trung bình của các frame MFCC chuẩn hóa
-    # mfccs_mean = np.mean(normalized_mfccs, axis=0)
-
-    return normalized_mfccs
-
+    # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
+    vowel = signal[is_speech_full]
+    frame_length = int(0.03 * Fs)   # 0.025
+    hop_length = int(0.01 * Fs)     # 0.011
+    frames = librosa.util.frame(vowel, frame_length=frame_length, hop_length=hop_length)
+    #Số khung
+    N = frames.shape[1]
+    start = N//3
+    end =  2*start  #3*start
+    for i in range(start,end):  # Lặp từ start đến end``
+        frame = frames[:, i]  # Lấy frame thứ i
+        mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
+        # Trích xuất MFCC
+        feature_matrix = np.vstack(mfccs)
+    # Chuẩn hóa các vector đặc trưng
+    scaler = StandardScaler()
+    normalized_features = scaler.fit_transform(feature_matrix)
+    # mfccs = librosa.feature.mfcc(y=vowel, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
+    # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
+    mfccs_mean = np.mean(normalized_features, axis=1)
+    return mfccs_mean
 
 def build_model_a(K):
     name_folders = ["23MTL", "24FTL", "25MLM", "27MCM", "28MVN", "29MHN", "30FTN", "32MTP", "33MHP", "34MQP", "35MMQ",
@@ -104,8 +63,6 @@ def build_model_a(K):
         vectors_a.append(MFCC)
     # avg_vector_a = np.mean(vectors_a,axis=0)
     mfcc_features = np.array(vectors_a)
-    # Now that they are padded, you can convert them to a numpy array
-    mfcc_features = np.array(vectors_a)
     num_clusters = K  # K =3
     kmeans = KMeans(n_clusters=K, init='k-means++', n_init=10, max_iter=300, random_state=42)
     kmeans.fit(mfcc_features)
@@ -113,6 +70,7 @@ def build_model_a(K):
     # Tâm cụm (centroids) cho mỗi cụm.
     centroids = kmeans.cluster_centers_
     # Tính trung bình của các vector trong mỗi cụm.
+
     mean_vectors = []
     for i in range(num_clusters):
         # Lấy chỉ số của các vector trong cụm hiện tại.
@@ -173,8 +131,7 @@ def build_model_e(K):
         # Lấy tất cả vector trong cụm.
         cluster_vectors = mfcc_features[cluster_indices]
         # Tính trung bình của các vector (chỉ lấy K vector đầu tiên nếu có nhiều hơn K).
-        mean_vector = np.mean(cluster_vectors[:K], axis=0) if len(cluster_vectors) >= K else np.mean(cluster_vectors,
-                                                                                                     axis=0)
+        mean_vector = np.mean(cluster_vectors[:K], axis=0) if len(cluster_vectors) >= K else np.mean(cluster_vectors,axis=0)
         mean_vectors.append(mean_vector)
 
     for i, mean_vec in enumerate(mean_vectors):
@@ -357,17 +314,26 @@ def build_model_u(K):
     # plt.grid(True)
     # Hiển thị đồ thị
     plt.show()
-    return mean_vectors
-
+    return mean_vectors  # tra va danh sach cac means cua k cum nguyen am a
 
 def Model_Of_speak():
-    K = 3
+    K= 3  # k = ?
     model_a = build_model_a(K)
     model_e = build_model_e(K)
     model_i = build_model_i(K)
     model_o = build_model_o(K)
     model_u = build_model_u(K)
     model = np.array([model_a, model_e, model_i, model_o, model_u])
+    print(model)
+    # plt.figure(figsize=(10, 6))
+    # for i in range(5):
+    #     plt.plot(model[i, :], label=f'MFCC {i + 1}')
+    # # Thêm title, legend và labels
+    # plt.title(' 5 MFCC Vectors Over Time')
+    # plt.xlabel('Frame Index')
+    # plt.ylabel('MFCC Coefficient Value')
+    # plt.legend()
+    # plt.show()
     return model
 
 
@@ -377,8 +343,6 @@ def readSignals_and_extractionMFCC(list_path):
         MFCC = extract_mfcc_from_wav(file_path)
         mfcc_vectors.append(MFCC)
     return mfcc_vectors
-
-
 
 def test(x_test, y_test, model):
     """ Hàm dự đoán 1 tập dữ liệu kiểm thử
@@ -397,42 +361,41 @@ def test(x_test, y_test, model):
     y_pred = []
     test_fft_vectors = readSignals_and_extractionMFCC(x_test)
     for i in range(len(test_fft_vectors)):
-        # one_predict = matching(test_fft_vectors[i], model)
-        # y_pred.append(one_predict)
-        # check = (y_test[i] == one_predict)
-        # print(f"{x_test[i]} /{one_predict}/ -> {check}")
-        # column1.append(x_test[i])
-        # column2.append(one_predict)
-        # column3.append(check)
-        dis_a = distanceA(test_fft_vectors[i],model[0])
-        dis_e = distanceE(test_fft_vectors[i], model[1])
-        dis_i = distanceI(test_fft_vectors[i], model[2])
-        dis_o = distanceO(test_fft_vectors[i], model[3])
-        dis_u = distanceU(test_fft_vectors[i], model[4])
-        one_predict_dis = min(dis_a,dis_e,dis_i,dis_o,dis_u)
-        if dis_a == one_predict_dis:
-            one_predict = "a"
-        elif dis_e == one_predict_dis:
-            one_predict = "e"
-        elif dis_i == one_predict_dis:
-            one_predict = "i"
-        elif dis_o == one_predict_dis:
-            one_predict = "o"
-        elif dis_u == one_predict_dis:
-            one_predict = "u"
-        check = (y_test[i] == one_predict)
+        one_predict = matching(test_fft_vectors[i], model)
         y_pred.append(one_predict)
+        check = (y_test[i] == one_predict)
         print(f"{x_test[i]} /{one_predict}/ -> {check}")
         column1.append(x_test[i])
         column2.append(one_predict)
         column3.append(check)
+        # dis_a = distanceA(test_fft_vectors[i],model[0])
+        # dis_e = distanceE(test_fft_vectors[i], model[1])
+        # dis_i = distanceI(test_fft_vectors[i], model[2])
+        # dis_o = distanceO(test_fft_vectors[i], model[3])
+        # dis_u = distanceU(test_fft_vectors[i], model[4])
+        # one_predict_dis = min(dis_a,dis_e,dis_i,dis_o,dis_u)
+        # if dis_a == one_predict_dis:
+        #     one_predict = "a"
+        # elif dis_e == one_predict_dis:
+        #     one_predict = "e"
+        # elif dis_i == one_predict_dis:
+        #     one_predict = "i"
+        # elif dis_o == one_predict_dis:
+        #     one_predict = "o"
+        # elif dis_u == one_predict_dis:
+        #     one_predict = "u"
+        # check = (y_test[i] == one_predict)
+        # y_pred.append(one_predict)
+        # print(f"{x_test[i]} /{one_predict}/ -> {check}")
+        # column1.append(x_test[i])
+        # column2.append(one_predict)
+        # column3.append(check)
     data = {'Index': index,
             'Column1': column1,
             'Column2': column2,
             'Column3': column3}
     accuracy = accuracy_score(y_test, y_pred)
     return y_pred, accuracy ,data
-
 
 def matching(vector_x, model_vectors):
     """Hàm so khớp vector_x (input) và model (các vector tham số của 5 nguyên âm)
@@ -484,22 +447,21 @@ def distanceU(mfcc,model_mfccs):
     min_distance_index = np.argmin(distances)
     return  min_distance_index
 
-test_folders = ['01MDA', '02FVA', '03MAB', '04MHB', '05MVB', '06FTB', '07FTC', '08MLD', '09MPD', '10MSD', '11MVD',
-                '12FTD', '14FHH', '15MMH', '16FTH', '17MTH', '18MNK', '19MXK', '20MVK', '21MTL', '22MHL']
+test_folders = ['01MDA', '02FVA', '03MAB', '04MHB', '05MVB', '06FTB', '07FTC', '08MLD', '09MPD', '10MSD', '11MVD','12FTD', '14FHH', '15MMH', '16FTH', '17MTH', '18MNK', '19MXK', '20MVK', '21MTL', '22MHL']
 vowel_labels = ['a', 'e', 'i', 'o', 'u']
 file_path_template = 'signals/NguyenAmKiemThu-16k/{}/{}.wav'
 x_test = []  # Lưu đường dẫn từng file test
 y_test = []  # Lưu nhãn
 for folder in test_folders:
     for label in vowel_labels:
-        file_path = file_path_template.format(folder, label)
+        file_path = file_path_template.format(folder,label)
         x_test.append(file_path)
         y_test.append(label)
 for x_name in x_test:
     print(x_name)
 
 model = Model_Of_speak()
-y_pred, accuracy = test(x_test, y_test, model)
+y_pred, accuracy ,data = test(x_test, y_test, model)
 confusion = confusion_matrix(y_test, y_pred)
 class_names = np.unique(y_test)
 df_confusion = pd.DataFrame(confusion, index=class_names, columns=class_names)
@@ -509,3 +471,6 @@ plt.xlabel("Predicted")
 plt.ylabel("True")
 plt.title("Confusion Matrix")
 plt.show()
+
+
+

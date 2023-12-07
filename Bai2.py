@@ -1,382 +1,267 @@
-import os
+import librosa
 import numpy as np
-import pandas as pd
-import soundfile as sf
-import sounddevice as sd
 import matplotlib.pyplot as plt
-from math import floor
+import scipy as sp
+from sklearn.metrics import accuracy_score, confusion_matrix
+import seaborn as sns
+import pandas as pd
+from sklearn.decomposition import PCA
 from scipy.signal import hamming
+import scipy.signal.windows
 
-#--------------------variables--------------------
 
-#---------------------------vector_file:
+def segment_vowel_silence(audio, Fs, threshold=0.065, min_duration=0.3):
+    # Chia khung tín hiệu, mỗi khung độ dài 25ms
+    frame_length = int(0.025 * Fs)
+    frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=frame_length)
+    # Tính STE từng khung
+    ste = np.sum(np.square(frames), axis=0)
 
-vector_filelist = ['FFT.txt']
-#-----------note
-'''
-FFT.txt: N_FFT = 1024, frame_len = 0.02, frame_shift = 0.02
-'''
-#-----------end note
+    # Chuẩn hóa STE
+    ste_normalized = (ste - np.min(ste)) / (np.max(ste) - np.min(ste))
 
-vector_file = vector_filelist[0]
-#---------------------------N_FFT values:
+    # Phân loại thành tiếng nói và khoảng lặng
+    is_speech = ste_normalized > threshold
 
-N_FFT_list = [512, 1024, 2048]
-N_FFT = N_FFT_list[1]
+    is_speech_full = np.repeat(is_speech, frame_length)[:len(audio)]
+    is_speech_full = np.pad(is_speech_full, (0, len(audio) - len(is_speech_full)), constant_values=False)
 
-#---------------------------frame_len values:
+    # Tìm danh sách khoảng lặng
+    silence_segments = librosa.effects.split(audio, top_db=threshold)
 
-frame_len_value_list = [0.01, 0.02 ,0.03]
-frame_len_value = frame_len_value_list[1]
+    # Bỏ đi các khoảng lặng < 300 ms
+    for start, end in silence_segments:
+        duration = librosa.samples_to_time(end - start, sr=Fs)
+        if duration < min_duration:
+            is_speech_full[start:end] = True
 
-#---------------------------frame_shift values:
-
-frame_shift_value_list = [0.01, 0.02, 0.03]
-frame_shift_value = frame_shift_value_list[1]
-
-#---------------------------folder:
-
-#---------tập huấn luyện:
-listfileHL =[
-        "signals/NguyenAmHuanLuyen-16k/23MTL/",
-        "signals/NguyenAmHuanLuyen-16k/24FTL/",
-        "signals/NguyenAmHuanLuyen-16k/25MLM/",
-        "signals/NguyenAmHuanLuyen-16k/27MCM/",
-        "signals/NguyenAmHuanLuyen-16k/28MVN/",
-        "signals/NguyenAmHuanLuyen-16k/29MHN/",
-        "signals/NguyenAmHuanLuyen-16k/30FTN/",
-        "signals/NguyenAmHuanLuyen-16k/32MTP/",
-        "signals/NguyenAmHuanLuyen-16k/33MHP/",
-        "signals/NguyenAmHuanLuyen-16k/34MQP/",
-        "signals/NguyenAmHuanLuyen-16k/35MMQ/",
-        "signals/NguyenAmHuanLuyen-16k/36MAQ/",
-        "signals/NguyenAmHuanLuyen-16k/37MDS/",
-        "signals/NguyenAmHuanLuyen-16k/38MDS/",
-        "signals/NguyenAmHuanLuyen-16k/39MTS/",
-        "signals/NguyenAmHuanLuyen-16k/40MHS/",
-        "signals/NguyenAmHuanLuyen-16k/41MVS/",
-        "signals/NguyenAmHuanLuyen-16k/42FQT/",
-        "signals/NguyenAmHuanLuyen-16k/43MNT/",
-        "signals/NguyenAmHuanLuyen-16k/44MTT/",
-        "signals/NguyenAmHuanLuyen-16k/45MDV/"]
-#---------tập kiểm thử:
-listfileKT = [
-        "signals/NguyenAmKiemThu-16k/01MDA/",
-        "signals/NguyenAmKiemThu-16k/02FVA/",
-        "signals/NguyenAmKiemThu-16k/03MAB/",
-        "signals/NguyenAmKiemThu-16k/04MHB/",
-        "signals/NguyenAmKiemThu-16k/05MVB/",
-        "signals/NguyenAmKiemThu-16k/06FTB/",
-        "signals/NguyenAmKiemThu-16k/07FTC/",
-        "signals/NguyenAmKiemThu-16k/08MLD/",
-        "signals/NguyenAmKiemThu-16k/09MPD/",
-        "signals/NguyenAmKiemThu-16k/10MSD/",
-        "signals/NguyenAmKiemThu-16k/11MVD/",
-        "signals/NguyenAmKiemThu-16k/12FTD/",
-        "signals/NguyenAmKiemThu-16k/14FHH/",
-        "signals/NguyenAmKiemThu-16k/15MMH/",
-        "signals/NguyenAmKiemThu-16k/16FTH/",
-        "signals/NguyenAmKiemThu-16k/17MTH/",
-        "signals/NguyenAmKiemThu-16k/18MNK/",
-        "signals/NguyenAmKiemThu-16k/19MXK/",
-        "signals/NguyenAmKiemThu-16k/20MVK/",
-        "signals/NguyenAmKiemThu-16k/21MTL/",
-        "signals/NguyenAmKiemThu-16k/22MHL/"]
-
-#----------------------end----------------------
-
-def get_vector_from_file():
-    
-    FFT = np.loadtxt(vector_file, delimiter='\t', skiprows=1)
-    FFTa = FFT[:, 0]
-    FFTe = FFT[:, 1]
-    FFTi = FFT[:, 2]
-    FFTo = FFT[:, 3]
-    FFTu = FFT[:, 4]
-    
-    return FFTa, FFTe, FFTi, FFTo, FFTu
-
-def display_matrix_as_table(matrix, dcx, dcxa, dcxe, dcxi, dcxo, dcxu):
-    columns = ['a', 'e', 'i', 'o', 'u']
-    index = ['a', 'e', 'i', 'o', 'u']
-    
-    accuracy_column = [dcxa / 21 * 100, dcxe / 21 * 100, dcxi / 21 * 100, dcxo / 21 * 100, dcxu / 21 * 100]
-    df = pd.DataFrame(matrix, columns=columns, index=index)
-    df.insert(loc=len(columns), column='Độ chính xác (%)', value=accuracy_column)
-    print("\n")
-    print("Kết quả với N_FFT = " + str(N_FFT) + ", frame_len = " + str(frame_len_value) + ", frame_shift = " + str(frame_shift_value) + ":")
-    print("=================================================")
-    print(df)
-    print("=================================================")
-    print('Độ chính xác tổng thể: ', dcx / 105 * 100, '%')
-    print("\n")
-
-def Show_Vector2():
-    FFTa, FFTe, FFTi, FFTo, FFTu = get_vector_from_file()
-
-    vowels = ['a', 'e', 'i', 'o', 'u']
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_title('Đặc trưng của các nguyên âm')
-    ax.set_xlabel('Mẫu FFT')
-    ax.set_ylabel('Giá trị FFT')
-    ax.grid(True)
-
-    for i, vowel in enumerate(vowels):
-        ax.plot(eval(f'FFT{vowel}'), '-', linewidth=1, label=f'{vowel}')
-
-    ax.legend(['/a/', '/e/', '/i/', '/o/', '/u/'])
-    ax.set_title('Đồ thị N_FFT bằng ' + str(N_FFT) + ', frame_len bằng ' + str(frame_len_value) + ', frame_shift bằng ' + str(frame_shift_value) + ':')
-    
-    plt.tight_layout()
-    plt.show()
-
-def Show_Vector():
-
-    FFTa, FFTe, FFTi, FFTo, FFTu = get_vector_from_file()
-
-    vowels = ['a', 'e', 'i', 'o', 'u']
-    
-    fig, axs = plt.subplots(5, 1, figsize=(10, 12))
-
-    for i in range(5):
-        ax = axs[i]
-        ax.set_title(f'Vector dac trung cua {vowels[i]}')
-        ax.set_xlabel('')
-        ax.set_ylabel('FFT Value')
-        ax.grid(True)
-
-    for i in range(5):
-        axs[0].plot(FFTa, '-', linewidth=1, label=f'a{i}')
-        axs[1].plot(FFTe, '-', linewidth=1, label=f'e{i}')
-        axs[2].plot(FFTi, '-', linewidth=1, label=f'i{i}')
-        axs[3].plot(FFTo, '-', linewidth=1, label=f'o{i}')
-        axs[4].plot(FFTu, '-', linewidth=1, label=f'u{i}')
-
-    plt.tight_layout()
-    plt.show()
-
-def euclidean_distance(vector1, vector2):
-    return np.linalg.norm(vector1 - vector2)
-
-def find_vowel(center_vectors):
-    
-    vector_a, vector_e, vector_i, vector_o, vector_u = get_vector_from_file()
-    
-    distances = {
-        'a': euclidean_distance(center_vectors, vector_a),
-        'e': euclidean_distance(center_vectors, vector_e),
-        'i': euclidean_distance(center_vectors, vector_i),
-        'o': euclidean_distance(center_vectors, vector_o),
-        'u': euclidean_distance(center_vectors, vector_u),
-    }
-
-    vowel = min(distances, key=distances.get)
-    
+    # Trả về tín hiệu chỉ chứa nguyên âm hay tiếng nói
+    vowel = audio[is_speech_full]
     return vowel
 
-def third_voice(time_start, time_end):
-    tb = np.round((time_end - time_start) / 3.0)
-    t1 = time_start + tb
-    t2 = time_end - tb
-    return t1, t2
 
-def normalize(energy, power, x):
-    energy = energy / np.max(energy)
-    power = power / np.max(power)
-    x = x / np.max(np.abs(x))
-    return energy, power, x
-
-def confusion_matrix(right_vowel, vowel, matrix):
-    list_vowel = ['a', 'e', 'i', 'o', 'u']
-    for i in range(len(list_vowel)):
-        if right_vowel == list_vowel[i]:
-            for j in range(len(list_vowel)):
-                if vowel == list_vowel[j]:
-                    matrix[i][j] += 1
-    return matrix
-
-def short_time_energy(x, fs, fd, f_overlap):
-    f_size = round(fd * fs)
-    f_overlap = round(f_overlap * fs)
-    n = len(x)
-    lenF = int(np.floor((n - f_overlap) / (f_size - f_overlap)))
-    temp = 0
-    Energy = np.zeros(n)
-    Power = np.zeros(lenF)
-    for i in range(lenF):
-        if temp + f_size - f_overlap <= n:
-            frame = 0
-            for j in range(temp, temp + f_size):
-                frame = frame + np.abs(x[j]) ** 2
-            Energy[temp: temp + f_size] = frame
-            Power[i] = frame
-            temp = round(temp + f_size - f_overlap)
-    return Energy, Power, f_size, lenF
-
-def remove_silence(x, lenF, Power, ThresholdSTE, f_size, fs):
-    f_overlap = 0.02
-    voice = np.zeros(lenF)
-    for i in range(lenF):
-        if Power[i] > ThresholdSTE:
-            voice[i] = 1
-        else:
-            voice[i] = 0
-
-    n_len = 0
-    vowel = np.array([])
-    j = 1
-    for i in range(lenF - 1):
-        if i == 0:
-            n_len = n_len + f_size / fs
-        else:
-            n_len = n_len + f_size / fs - f_overlap
-
-        if voice[i] == 0 and voice[i + 1] == 1:
-            vowel = np.append(vowel, n_len)
-            j = j + 1
-
-    j = 1
-    n_len = 0
-    for i in range(lenF - 1):
-        if i == 0:
-            n_len = n_len + f_size / fs
-        else:
-            n_len = n_len + f_size / fs - f_overlap
-
-        if voice[i] == 1 and voice[i + 1] == 0:
-            vowel = np.append(vowel, n_len)
-            j = j + 1
-
-    check_speech = np.ones(len(vowel))
-    for i in range(1, len(vowel) - 1, 2):
-        if abs(vowel[i + 1] - vowel[i]) < 0.3:
-            check_speech[i] = 0
-            check_speech[i + 1] = 0
-
-    speech = np.array([])
-    j = 1
-    for i in range(len(vowel)):
-        if check_speech[i] == 1:
-            speech = np.append(speech, vowel[i])
-            j = j + 1
-
-    return speech
-
-def detected_silence(file_input):
-    x, Fs = sf.read(file_input)
-    Energy, Power, f_size, lenF = short_time_energy(x, Fs, 0.03, 0.02)
-    ThresholdSTE = 0.3
-    Energy, Power, x = normalize(Energy, Power, x)
-    vowel = remove_silence(x, lenF, Power, ThresholdSTE, f_size, Fs)
-    pointstart = vowel[0]
-    pointend = vowel[1]
-    return pointstart, pointend
+def nomalizing_value(fft_vector):
+    """
+    Hàm chuẩn hóa vector FFT về cùng thang đo
+    """
+    magnitude_spectrum = np.abs(fft_vector)
+    normalized_spectrum = magnitude_spectrum / np.sum(magnitude_spectrum)
+    return normalized_spectrum
 
 
-def find_fft(y, time_start, time_end, fs):
-    frame_shift = (frame_shift_value * fs)
-    frame_len = int(frame_len_value * fs)
-    number_frame = int((time_end - time_start) / frame_shift)
-    hamming_wd = hamming((frame_len))
-    ffts = []
+def FFT_1vowel_1speaker(audio, Fs, N_FFT):
+    """
+    Hàm Trích xuất vector FFT của 1 nguyên âm 1 người (1 audio input)
+    """
+    frame_length = int(0.025 * Fs)
+    hop_length = int(0.01 * Fs)
+    frames = librosa.util.frame(x=audio, frame_length=frame_length, hop_length=hop_length)
+    sum_fft = np.zeros(N_FFT, dtype=complex)
 
-    for frame_index in range(1, number_frame + 1):
-        start = (frame_index - 1) * frame_shift + time_start
-        finish = min(len(y), start + frame_len)
-        f_size = np.arange(start, finish).astype(int)
-        frame = hamming_wd * y[f_size]
-        p = np.abs(np.fft.fft(frame, N_FFT))
-        p1 = p[:len(p) // 2]
-        ffts.append(p1)
+    for frame in frames.T:  # .T Chuyển đổi khung để lặp lại chính xác
+        windowing_frame = frame * scipy.signal.windows.hamming(frame_length)
+        sum_fft += np.abs(np.fft.fft(windowing_frame, N_FFT))
 
-    ffts = np.mean(np.array(ffts), axis=0)
-    return ffts
+    avg_fft = sum_fft / len(frames[0])  # Chia cho số lượng khung hình
+    return nomalizing_value(avg_fft)[:N_FFT // 2]
 
-def Trich_Vecto_Dac_Trung_1_Nguoi(file, start, finish):
-    y, Fs = sf.read(file)
-    time_start = np.round(start * Fs).astype(int)
-    time_end = np.round(finish * Fs).astype(int)
-    t_start = time_start + ((time_end - time_start) // 3)
-    t_end = time_start + 2 * ((time_end - time_start) // 3)
-    ffts = find_fft(y, t_start, t_end, Fs)
-    center_vectors = ffts
-    return center_vectors
 
-def Trich_Vecto_Dac_Trung(id):
-    FFTs = []
-    for person in range(len(listfileHL)):
-        if id == 1:
-            file = listfileHL[person] + 'a.wav'
-        elif id == 2:
-            file = listfileHL[person] + 'e.wav'
-        elif id == 3:
-            file = listfileHL[person] + 'i.wav'
-        elif id == 4:
-            file = listfileHL[person] + 'o.wav'
-        elif id == 5:
-            file = listfileHL[person] + 'u.wav'
-    
-        y, Fs = sf.read(file)
-        start, end = detected_silence(file)
-        time_start = np.round(start * Fs).astype(int)
-        time_end = np.round(end * Fs).astype(int)
-        T1, T2 = third_voice(time_start, time_end)
-        ffts = find_fft(y, T1, T2, Fs)
-        FFTs.append(ffts)
-            
-    center_vectors = np.mean(np.array(FFTs), axis=0)
+# Chia khung tín hiệu, mỗi khung độ dài 20ms,số mẫu mỗi khung = độ dài khung *  tần số lấy mẫu
 
-    return center_vectors
+# Số khung
+# N = frames.shape[1]
+# start = N // 3
+# end = 2*start
+# fft_frames = []
+# # hamming dùng để giảm rò rỉ quang phổ khi thực hiện biến đổi Fourier trên 1 đoạn tín hiệu, cải thiện độ chính xác
+# hanning_window = np.hanning(frame_length)
 
-def save_file():
-    
-    FFTa = Trich_Vecto_Dac_Trung(1)
-    FFTe = Trich_Vecto_Dac_Trung(2)
-    FFTi = Trich_Vecto_Dac_Trung(3)
-    FFTo = Trich_Vecto_Dac_Trung(4)
-    FFTu = Trich_Vecto_Dac_Trung(5)
-    # print(FFTa)
-    # print(FFTe)
-    # print(FFTi)
-    # print(FFTo)
-    # print(FFTu)
-    
-    np.savetxt(vector_file, np.column_stack((FFTa, FFTe, FFTi, FFTo, FFTu)), fmt="%s", delimiter='\t', header="FFTa\tFFTe\tFFTi\tFFTo\tFFTu")
+# for i in range(start, end):
+#     frame = frames[:, i] * hanning_window # Áp dụng cửa sổ Hamming [:, i], chọn tất cả các hàng cột thứ i
+#     fft_result = np.fft.fft(frame, N_FFT)
+#     fft_frames.append(fft_result)
 
-def process_vowel(vowel, suffix, counters, matrix):
+# # Tính trung bình cộng của M vector FFT
+# avg_fft = np.mean(fft_frames, axis=0)
 
-    for person, filepath in enumerate(listfileKT):
-        filename = filepath + suffix
-        t_start, t_end = detected_silence(filename)
-        center_vectors = Trich_Vecto_Dac_Trung_1_Nguoi(filename, t_start, t_end)
-        recognized_vowel = find_vowel(center_vectors)
+# return avg_fft
 
-        if recognized_vowel == vowel:
-            counters['dcx'] += 1
-            counters[f'dcx{vowel}'] += 1
+def FFT_1vowel_nspeaker(vowelchar, N_FFT):
+    """ Hàm tính vector đặc trưng fft cho 1 nguyên âm (không phụ thuộc người nói)
+        - Đầu vào là 1 ký hiệu nguyên âm ('a',.., 'u') = tên tệp
+        - Bằng cách tính trung bình cộng của 21 người nói khác nhau
+        - Trả về 1 vector fft cuối cùng ---> để bỏ vào model
+    """
+    name_folders = ["23MTL", "24FTL", "25MLM", "27MCM", "28MVN", "29MHN", "30FTN", "32MTP", "33MHP", "34MQP", "35MMQ", \
+                    "36MAQ", "37MDS", "38MDS", "39MTS", "40MHS", "41MVS", "42FQT", "43MNT", "44MTT", "45MDV"]
+    file_path_template = 'signals/NguyenAmHuanLuyen-16k/{}/{}.wav'
+    vectors = []
 
-        matrix = confusion_matrix(vowel, recognized_vowel, matrix)
+    for foldername in name_folders:
+        file_path = file_path_template.format(foldername, vowelchar)
+        # print(file_path) #Dòng này sau này xóa
+        audio, Fs = librosa.load(file_path, sr=None)
+        vowel = segment_vowel_silence(audio, Fs, threshold=0.065, min_duration=0.3)
+        fft1 = FFT_1vowel_1speaker(vowel, Fs, N_FFT=N_FFT)
+        vectors.append(fft1)
 
-    return counters, matrix
+    vector_fft = np.mean(vectors, axis=0)
+    print(f"Đã xong chữ {vowelchar}, len(vector_fft) = {len(vector_fft)}")
+    return vector_fft
 
-def vowel_recognition():
-    counters = {'dcx': 0, 'dcxa': 0, 'dcxe': 0, 'dcxi': 0, 'dcxo': 0, 'dcxu': 0}
-    matrix = np.zeros((5, 5))
-    
-    for i, vowel in enumerate(['a', 'e', 'i', 'o', 'u'], start=1):
-        suffix = vowel + '.wav'
-        counters, matrix = process_vowel(vowel, suffix, counters, matrix)
-        
-    display_matrix_as_table(matrix, counters['dcx'], counters['dcxa'], counters['dcxe'], counters['dcxi'], counters['dcxo'], counters['dcxu'])
+
+# vector_fft là tổng trung bình của 21 người nói khác nhau của mỗi nguyên âm
+
+# Caau2. ý 3: ở câu 2c ta tính được nguyên âm 1 file của 1 người nói,
+# giờ ta tính 5 file nguyên âm của 1 người nói và so sánh với trung bình của nguyên âm tương ứng bằng hàm matching để tính khoảng cách Euclidean
+def matching(vector_x, model_vectors):
+    """Hàm so khớp vector_x (input) và model (các vector tham số của 5 nguyên âm)
+        Trả về kết quả là Nguyên âm có khoảng cách Euclidean nhỏ nhất
+    """
+    # Danh sách các vector tham số fft của 5 nguyên âm
+    # model_vectors[0] = vector_a,
+    # model_vectors[1] = vector_e,
+    # model_vectors[2] = vector_i,
+    # model_vectors[3] = vector_o,
+    # model_vectors[4] = vector_u]
+
+    # Các nhãn tương ứng
+    vowels = ['a', 'e', 'i', 'o', 'u']
+
+    # Tính khoảng cách Euclidean giữa vector_x và từng vector trong model
+    distances = [np.linalg.norm(vector_x - model_vector) for model_vector in model_vectors]
+
+    # Xác định nguyên âm có khoảng cách nhỏ nhất
+    min_distance_index = np.argmin(distances)
+
+    # Kết quả nhận dạng
+    result = vowels[min_distance_index]
+
+    return result
+
+
+def build_model(N_FFT):
+    print("Trích xuất các vector với N_FFT= ", N_FFT)
+    vector_a = FFT_1vowel_nspeaker("a", N_FFT)
+    vector_e = FFT_1vowel_nspeaker("e", N_FFT)
+    vector_i = FFT_1vowel_nspeaker("i", N_FFT)
+    vector_o = FFT_1vowel_nspeaker("o", N_FFT)
+    vector_u = FFT_1vowel_nspeaker("u", N_FFT)
+    model_vectors = [vector_a, vector_e, vector_i, vector_o, vector_u]
+    return model_vectors
+
+
+def readSignals_and_extractionFFT(list_path, N_FFT):
+    fft_vectors = []
+    for file_path in list_path:
+        audio, Fs = librosa.load(file_path, sr=None)
+        vowel = segment_vowel_silence(audio, Fs, threshold=0.065, min_duration=0.3)
+        fft1 = FFT_1vowel_1speaker(vowel, Fs, N_FFT=N_FFT)
+        fft_vectors.append(fft1)
+    return fft_vectors
+
+
+# Hàm Test Dự đoán nhãn của tập dữ liệu kiểm thử và tính độ chính xác
+# Gọi hàm readSignals_and_extractionFFT để tính vector đặc trưng cho tất cả các file trong tập kiểm thử.
+# Dùng hàm matching để dự đoán nhãn của từng file.
+# In kết quả dự đoán và tính độ chính xác sử dụng accuracy_score.
+def test(x_test, y_test, model, N_FFT):
+    """ Hàm dự đoán 1 tập dữ liệu kiểm thử
+        x_test: tập kiểm thử với kiểu dữ liệu là .......
+        y_test: nhãn của tập kiểm thử
+
+        Trả về:
+        - Kết quả nhận dạng (dự đoán) nhãn nguyên âm của mỗi file test (/a/, …,/u/), Đúng/Sai
+        - Độ chính xác nhận dạng tổng hợp (%)
+    """
+    print("Nhận dạng với N_FFT =", N_FFT)
+    y_pred = []
+    test_fft_vectors = readSignals_and_extractionFFT(x_test, N_FFT)
+    for i in range(len(test_fft_vectors)):
+        one_predict = matching(test_fft_vectors[i], model)
+        y_pred.append(one_predict)
+        check = (y_test[i] == one_predict)
+        print(f"{x_test[i]} /{one_predict}/ -> {check}")
+
+    accuracy = accuracy_score(y_test, y_pred)
+    return y_pred, accuracy
+
 
 if __name__ == "__main__":
-    # Trích vector đặc trưng từ NguyenAmHuanLuyen và lưu vào file
-    # save_file()
-    
-    # Nhận diện nguyên âm từ NguyenAmKiemThu
-    vowel_recognition()
-    
-    # Hiển thị vector đặc trưng
-    # Show_Vector()
-    Show_Vector2()
+
+    # Đọc tên từng file, bỏ vào x_test và y_test
+    test_folders = ['01MDA', '02FVA', '03MAB', '04MHB', '05MVB', '06FTB', '07FTC', '08MLD', '09MPD', '10MSD', '11MVD', \
+                    '12FTD', '14FHH', '15MMH', '16FTH', '17MTH', '18MNK', '19MXK', '20MVK', '21MTL', '22MHL']
+    vowel_labels = ['a', 'e', 'i', 'o', 'u']
+    file_path_template = 'signals/NguyenAmKiemThu-16k/{}/{}.wav'
+    x_test = []  # Lưu đường dẫn từng file test
+    y_test = []  # Lưu nhãn
+    for folder in test_folders:
+        for label in vowel_labels:
+            file_path = file_path_template.format(folder, label)
+            x_test.append(file_path)
+            y_test.append(label)
+
+    model1 = build_model(512)
+    model2 = build_model(1024)
+    model3 = build_model(2048)
+
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(np.real(model1))
+    Y = ['a', 'e', 'i', 'o', 'u']
+    label_to_color = {'a': 'red', 'e': 'blue', 'i': 'green', 'o': 'purple', 'u': 'orange'}
+    Y_colors = [label_to_color[label] for label in Y]
+    plt.scatter(X_pca[:, 0], X_pca[:, 1], c=Y_colors, cmap='viridis', edgecolor='k', s=50)
+    plt.title('Các vector FFT (N_FFT = 512) sau khi giảm chiều')
+    for i, label in enumerate(Y):
+        plt.annotate(label, (X_pca[i, 0], X_pca[i, 1]), textcoords="offset points", xytext=(0, 5), ha='center')
+    plt.xlabel('Principal Component 1')
+    plt.ylabel('Principal Component 2')
+    plt.show()
+
+    X_pca = pca.fit_transform(np.real(model2))
+    Y = ['a', 'e', 'i', 'o', 'u']
+    label_to_color = {'a': 'red', 'e': 'blue', 'i': 'green', 'o': 'purple', 'u': 'orange'}
+    Y_colors = [label_to_color[label] for label in Y]
+    plt.scatter(X_pca[:, 0], X_pca[:, 1], c=Y_colors, cmap='viridis', edgecolor='k', s=50)
+    plt.title('Các vector FFT (N_FFT = 1024) sau khi giảm chiều')
+    for i, label in enumerate(Y):
+        plt.annotate(label, (X_pca[i, 0], X_pca[i, 1]), textcoords="offset points", xytext=(0, 5), ha='center')
+    plt.xlabel('Principal Component 1')
+    plt.ylabel('Principal Component 2')
+    plt.show()
+
+    X_pca = pca.fit_transform(np.real(model3))
+    Y = ['a', 'e', 'i', 'o', 'u']
+    label_to_color = {'a': 'red', 'e': 'blue', 'i': 'green', 'o': 'purple', 'u': 'orange'}
+    Y_colors = [label_to_color[label] for label in Y]
+    plt.scatter(X_pca[:, 0], X_pca[:, 1], c=Y_colors, cmap='viridis', edgecolor='k', s=50)
+    plt.title('Các vector FFT (N_FFT = 2048) sau khi giảm chiều')
+    for i, label in enumerate(Y):
+        plt.annotate(label, (X_pca[i, 0], X_pca[i, 1]), textcoords="offset points", xytext=(0, 5), ha='center')
+    plt.xlabel('Principal Component 1')
+    plt.ylabel('Principal Component 2')
+    plt.show()
+
+    y_pred1, accuracy1 = test(x_test, y_test, model1, 512)
+    y_pred2, accuracy2 = test(x_test, y_test, model2, 1024)
+    y_pred3, accuracy3 = test(x_test, y_test, model3, 2048)
+
+    print(accuracy1, accuracy2, accuracy3, sep='\n')
+
+    confusion = None
+    if (accuracy1 > accuracy2 and accuracy1 > accuracy3):
+        confusion = confusion_matrix(y_test, y_pred1)
+    elif (accuracy2 > accuracy3):
+        confusion = confusion_matrix(y_test, y_pred2)
+    else:
+        confusion = confusion_matrix(y_test, y_pred3)
+
+    class_names = np.unique(y_test)
+    df_confusion = pd.DataFrame(confusion, index=class_names, columns=class_names)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(df_confusion, annot=True, fmt="d", cmap="viridis")
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.title("Confusion Matrix")
+    plt.show()

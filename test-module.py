@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score, confusion_matrix
 import seaborn as sns
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-
+from sklearn.cluster import KMeans
 #  trich xuat vector dac trung cho tung file tin hieu
 def extract_mfcc_from_wav(file_path):
     # Đọc file wav và lấy mẫu
@@ -36,16 +37,18 @@ def extract_mfcc_from_wav(file_path):
     N = frames.shape[1]
     fft_frames = []
     start = N//3
-    end =  2*start#3*start
+    end =  2*start  #3*start
     for i in range(start,end):  # Lặp từ start đến end``
         frame = frames[:, i]  # Lấy frame thứ i
-        fft_result = mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
-        fft_frames.append(fft_result)
-    # Trích xuất MFCC
+        mfccs = librosa.feature.mfcc(y=frame, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
+        # Trích xuất MFCC
+        feature_matrix = np.vstack(mfccs)
+    # Chuẩn hóa các vector đặc trưng
+    scaler = StandardScaler()
+    normalized_features = scaler.fit_transform(feature_matrix)
     # mfccs = librosa.feature.mfcc(y=vowel, sr=Fs, n_mfcc=13, n_fft=2048, hop_length=512)
     # để tạo thành một vector đặc trưng duy nhất cho toàn bộ đoạn âm thanh
-    mfccs_mean = np.mean(mfccs, axis=1)
-
+    mfccs_mean = np.mean(normalized_features, axis=1)
     return mfccs_mean
 
 def build_model_a():
